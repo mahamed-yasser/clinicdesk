@@ -1,0 +1,1 @@
+{"name":"clinicdesk","version":"1.0.0","description":"Appointment booking and back-office for small clinics and salons","scripts":{"start":"node --no-warnings server.js","test":"node --no-warnings --test test/*.test.js","seed":"node --no-warnings seed.js"}}

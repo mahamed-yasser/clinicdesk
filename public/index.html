@@ -1,0 +1,43 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Book an appointment | ClinicDesk</title><link rel="stylesheet" href="/style.css"></head><body>
+<header><b>ClinicDesk Demo Clinic</b><a href="/admin">Staff login</a></header>
+<main>
+<div id="book">
+<h1>Book an appointment</h1>
+<p class="mut" id="tzn">Demo with fictional data. Appointment details only, no medical information is collected.</p>
+<div class="card"><h2>1. Choose a service</h2><div class="row">
+<div><label for="svc">Service</label><select id="svc"></select></div>
+<div><label for="stf">Staff</label><select id="stf"></select></div>
+<div><label for="day">Date</label><input type="date" id="day"></div></div></div>
+<div class="card"><h2>2. Pick a time</h2><div id="slots" class="slots"></div><p id="noslots" class="mut" hidden>No free times on this date. Try another day.</p></div>
+<div class="card"><h2>3. Your details</h2>
+<form id="f"><div class="row"><div><label for="name">Full name</label><input id="name" required minlength="2" autocomplete="name"></div>
+<div><label for="phone">Phone</label><input id="phone" required autocomplete="tel" placeholder="+20 100 000 0000"></div>
+<div><label for="email">Email (optional)</label><input id="email" type="email" autocomplete="email"></div></div>
+<label for="notes">Note (optional, no medical details)</label><textarea id="notes" rows="2" maxlength="300"></textarea>
+<p id="err" class="msg err" hidden></p><p><button id="go" disabled>Confirm booking</button></p></form></div>
+</div>
+<div id="done" class="card confirm" hidden><h1>Booking confirmed</h1><p id="sum"></p><p>Your booking code</p><p class="code" id="code"></p><p class="mut">Keep this code to cancel your booking.</p><p><button class="danger" id="cancel">Cancel this booking</button> <button class="ghost" onclick="location.reload()">Book another</button></p><p id="cmsg"></p></div>
+</main>
+<script>
+const $=id=>document.getElementById(id);let sel=null,svcs=[],last=null;
+const api=async(u,o)=>{const r=await fetch(u,o);const d=await r.json();if(!r.ok)throw new Error(d.error||'Error');return d};
+const iso=d=>d.toISOString().slice(0,10);
+async function init(){const d=await api('/api/services');svcs=d.services;
+$('svc').innerHTML=svcs.map(s=>`<option value="${s.id}">${s.name} (${s.minutes} min, $${s.price})</option>`).join('');
+$('stf').innerHTML='<option value="">Anyone available</option>'+d.staff.map(s=>`<option value="${s.id}">${s.name}, ${s.role}</option>`).join('');
+let t=new Date(d.today+'T00:00:00Z');t.setUTCDate(t.getUTCDate()+1);while([5,6].includes(t.getUTCDay()))t.setUTCDate(t.getUTCDate()+1);
+$('tzn').textContent+=' Times are clinic time ('+d.timezone+').';$('day').min=d.today;$('day').value=iso(t);load()}
+async function load(){sel=null;$('go').disabled=true;$('slots').innerHTML='';
+try{const d=await api(`/api/slots?day=${$('day').value}&service=${$('svc').value}&staff=${$('stf').value}`);
+$('noslots').hidden=d.slots.length>0;
+$('slots').innerHTML=d.slots.map(s=>`<button type="button" class="slot" data-t="${s.time}">${s.time}</button>`).join('')}catch(e){$('noslots').hidden=false}}
+['svc','stf','day'].forEach(i=>$(i).onchange=load);
+$('slots').onclick=e=>{const b=e.target.closest('.slot');if(!b)return;document.querySelectorAll('.slot').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');sel=b.dataset.t;$('go').disabled=false};
+$('f').onsubmit=async e=>{e.preventDefault();$('err').hidden=true;
+try{const d=await api('/api/book',{method:'POST',body:JSON.stringify({customer:$('name').value,phone:$('phone').value,email:$('email').value,notes:$('notes').value,serviceId:$('svc').value,staffId:$('stf').value,day:$('day').value,time:sel})});
+last=d.booking;$('book').hidden=true;$('done').hidden=false;$('code').textContent=last.code;
+$('sum').textContent=`${last.service} with ${last.staff} on ${last.day} at ${last.start}`}
+catch(x){$('err').textContent=x.message;$('err').hidden=false;load()}};
+$('cancel').onclick=async()=>{try{await api(`/api/booking/${last.code}/cancel`,{method:'POST'});$('cmsg').className='msg ok';$('cmsg').textContent='Booking cancelled.'}catch(x){$('cmsg').className='msg err';$('cmsg').textContent=x.message}};
+init();
+</script></body></html>
