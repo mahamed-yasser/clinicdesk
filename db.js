@@ -49,5 +49,8 @@ function sessionUser(db, token) {
   if (!token) return null;
   return db.prepare('SELECT u.id,u.username FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?').get(token, Date.now()) || null;
 }
+function logout(db, token) {
+  if (token) db.prepare('DELETE FROM sessions WHERE token=?').run(token);
+}
 const needsSetup = db => !db.prepare('SELECT 1 FROM users').get();
-module.exports = { needsSetup, open, createUser, login, sessionUser };
+module.exports = { needsSetup, open, createUser, login, logout, sessionUser };
