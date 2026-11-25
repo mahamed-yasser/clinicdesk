@@ -2,7 +2,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { open, login, sessionUser, createUser, needsSetup } = require('./db');
+const { open, login, logout, sessionUser, createUser, needsSetup } = require('./db');
 const B = require('./booking');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png' };
@@ -50,7 +50,7 @@ function createApp(db, { now = () => new Date(), publicLimit = 30, loginLimit = 
           fails.delete(ip);
           return send(res, 200, { ok: true }, 'application/json', { 'Set-Cookie': `sid=${tok}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800` });
         }
-        if (m === 'POST' && p === '/api/logout') return send(res, 200, { ok: true }, 'application/json', { 'Set-Cookie': 'sid=; Max-Age=0; Path=/' });
+        if (m === 'POST' && p === '/api/logout') { logout(db, cookie(req)); return send(res, 200, { ok: true }, 'application/json', { 'Set-Cookie': 'sid=; Max-Age=0; Path=/' }); }
         // admin
         const user = sessionUser(db, cookie(req));
         if (!user) throw new B.BookingError('Login required', 401);
