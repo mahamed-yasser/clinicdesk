@@ -36,7 +36,7 @@ Staff (login required):
 No double booking, including simultaneous requests.
 
 ## Security notes
-Passwords hashed with scrypt. Session cookie HttpOnly and SameSite=Strict. Login throttling (5 failures per minute per IP) and per-IP rate limits on booking, lookup and cancel. Public lookup returns no personal data. CSV export neutralises spreadsheet formulas. Inputs validated, pages escape output.
+Passwords hashed with scrypt. Session cookie HttpOnly and SameSite=Strict; logout deletes the session on the server, so a copied old cookie stops working. Login throttling (5 failures per minute per IP) and per-IP rate limits on booking, lookup and cancel. Public lookup returns no personal data. CSV export neutralises spreadsheet formulas. Inputs validated, pages escape output.
 Not security-reviewed. Before real use: serve over HTTPS (the cookie is not marked Secure), put it behind a reverse proxy, add backups, and review privacy rules for storing client phone numbers. Rate limits are in memory and per process. One staff role only, no password reset, no email/SMS reminders, no payments.
 
 ## Tests
