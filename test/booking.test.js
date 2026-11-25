@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { open, createUser, login, sessionUser } = require('../db');
+const { open, createUser, login, logout, sessionUser } = require('../db');
 const B = require('../booking');
 const { seed } = require('../seed');
 const { createApp } = require('../server');
@@ -262,4 +262,25 @@ test('client and agenda endpoints require staff login', async () => {
   const db = fresh(); const srv = createApp(db, { now: () => NOW }); await new Promise(r => srv.listen(0, '127.0.0.1', r)); const port = srv.address().port;
   for (const u of ['/api/admin/clients', '/api/admin/agenda?from=2026-11-24&to=2026-11-25', '/api/admin/client-history?phone=123456']) { const r = await fetch(`http://127.0.0.1:${port}${u}`); assert.strictEqual(r.status, 401, u); }
   srv.close();
+});
+test('logout deletes the server session: the old token no longer works', async () => {
+  const db = open(':memory:');
+  createUser(db, 'o', 'a-long-password');
+  const t1 = login(db, 'o', 'a-long-password'), t2 = login(db, 'o', 'a-long-password');
+  assert.ok(sessionUser(db, t1));
+  logout(db, t1);
+  assert.strictEqual(sessionUser(db, t1), null);
+  assert.ok(sessionUser(db, t2)); // another session of the same user stays valid
+  assert.doesNotThrow(() => logout(db, undefined)); // no cookie is harmless
+  assert.doesNotThrow(() => logout(db, 'unknown'));
+});
+test('HTTP: replaying the cookie after /api/logout is rejected', async () => {
+  await withServer(async url => {
+    const ck = await loginCookie(url);
+    const h = { cookie: ck };
+    assert.strictEqual((await fetch(url + '/api/admin/me', { headers: h })).status, 200);
+    const out = await fetch(url + '/api/logout', { method: 'POST', headers: h });
+    assert.strictEqual(out.status, 200);
+    assert.strictEqual((await fetch(url + '/api/admin/me', { headers: h })).status, 401); // old cookie replayed
+  });
 });
