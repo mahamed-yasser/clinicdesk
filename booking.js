@@ -90,18 +90,37 @@ function cancel(db, code) {
   db.prepare("UPDATE appointments SET status='cancelled' WHERE code=?").run(a.code);
   return getByCode(db, code);
 }
-function setStatus(db, code, status) {
+const ALLOWED = { booked: ['completed', 'cancelled', 'no_show'], completed: ['no_show'], no_show: ['completed'], cancelled: ['booked'] };
+const OVERLAP = /overlap/i;
+function setStatus(db, code, status, now = new Date()) {
   if (!['booked', 'completed', 'cancelled', 'no_show'].includes(status)) throw new BookingError('Bad status');
   const a = getByCode(db, code);
   if (!a) throw new BookingError('Booking not found', 404);
-  db.prepare('UPDATE appointments SET status=? WHERE code=?').run(status, a.code);
+  if (a.status === status) return a;
+  if (!ALLOWED[a.status].includes(status)) throw new BookingError(`A ${a.status} booking cannot become ${status}`, 409);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (status === 'booked') { // restore: re-validate against TODAY's rules (hours, time off, active staff/service, not in the past, slot free)
+      if (!db.prepare('SELECT 1 FROM staff WHERE id=? AND active=1').get(a.staff_id)) throw new BookingError('Staff member is not active', 409);
+      if (!db.prepare('SELECT 1 FROM services WHERE id=? AND active=1').get(a.service_id)) throw new BookingError('Service is not active', 409);
+      const cn = clinicNow(db, now);
+      if (a.day < cn.day) throw new BookingError('A booking in the past cannot be restored; make a new booking', 409);
+      const free = staffSlots(db, a.staff_id, a.day, a.end_min - a.start_min, a.day === cn.day ? cn.min : null);
+      if (!free.includes(a.start_min)) throw new BookingError('That time is no longer available (taken, outside working hours, or a day off)', 409);
+    }
+    db.prepare('UPDATE appointments SET status=? WHERE id=?').run(status, a.id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); if (OVERLAP.test(e.message)) throw new BookingError('That time is not available', 409); throw e; }
   return getByCode(db, code);
+}
+function futureBookingsFor(db, staffId, today) {
+  return db.prepare("SELECT count(*) n FROM appointments WHERE staff_id=? AND day>=? AND status='booked'").get(staffId, today).n;
 }
 function reschedule(db, code, day, time, now = new Date()) {
   const a = getByCode(db, code);
   if (!a) throw new BookingError('Booking not found', 404);
   if (a.status !== 'booked') throw new BookingError('Only active bookings can be moved', 409);
-  const svc = db.prepare('SELECT id,minutes FROM services WHERE name=?').get(a.service);
+  const svc = db.prepare('SELECT id,minutes FROM services WHERE id=?').get(a.service_id);
   if (!validDay(day) || !/^\d{2}:\d{2}$/.test(time || '')) throw new BookingError('Invalid date or time');
   const start = toMin(time);
   db.exec('BEGIN IMMEDIATE');
@@ -111,10 +130,11 @@ function reschedule(db, code, day, time, now = new Date()) {
     if (day < today) throw new BookingError('That date has passed');
     const nowMin = day === today ? cn.min : null;
     const staffId = db.prepare('SELECT staff_id FROM appointments WHERE code=?').get(a.code).staff_id;
+    if (!db.prepare('SELECT 1 FROM staff WHERE id=? AND active=1').get(staffId)) throw new BookingError('Staff member is not active', 409);
     if (!staffSlots(db, staffId, day, svc.minutes, nowMin).includes(start)) throw new BookingError('That time is not available with the same staff member', 409);
     db.prepare("UPDATE appointments SET status='booked',day=?,start_min=?,end_min=? WHERE code=?").run(day, start, start + svc.minutes, a.code);
     db.exec('COMMIT');
-  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  } catch (e) { db.exec('ROLLBACK'); if (OVERLAP.test(e.message)) throw new BookingError('That time is not available with the same staff member', 409); throw e; }
   return getByCode(db, code);
 }
 
@@ -196,4 +216,4 @@ function addTimeOff(db, staffId, day, note) {
   const clash = db.prepare("SELECT count(*) n FROM appointments WHERE staff_id=? AND day=? AND status='booked'").get(staffId, day).n;
   db.prepare('INSERT INTO time_off(staff_id,day,note) VALUES(?,?,?)').run(staffId, day, clean(note, 100)); return { existingBookings: clash };
 }
-module.exports = { clients, clientHistory, agenda, clinicNow, tzOf, saveService, saveStaff, setHours, staffOverview, addTimeOff, BookingError, availableSlots, book, cancel, setStatus, reschedule, getByCode, listDay, listRange, stats, toCsv, validDay };
+module.exports = { futureBookingsFor, clients, clientHistory, agenda, clinicNow, tzOf, saveService, saveStaff, setHours, staffOverview, addTimeOff, BookingError, availableSlots, book, cancel, setStatus, reschedule, getByCode, listDay, listRange, stats, toCsv, validDay };
